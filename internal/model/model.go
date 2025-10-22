@@ -2,11 +2,13 @@ package model
 
 import (
 	"bufio"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -166,6 +168,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				outs = append(outs, res.Out)
 			}
 			m.VirtualText = strings.Join(outs, "\n")
+		case "ctrl+r":
+			// Run a fixed command to clear the tty: `clear > /dev/tty`.
+			// This uses bash -lc and a short timeout to avoid hangs.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "bash", "-lc", "clear > /dev/tty")
+			if err := cmd.Run(); err != nil {
+				if ctx.Err() == context.DeadlineExceeded {
+					m.VirtualText = "\nError: clear command timed out"
+				} else {
+					m.VirtualText = "\nError: could not run clear"
+				}
+				return m, nil
+			}
+			// Do not set VirtualText on success - the tty was cleared.
+			m.VirtualText = ""
 		case "y":
 			blocks, err := code.Parse(m.Slides[m.Page])
 			if err != nil {
